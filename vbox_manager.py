@@ -44,7 +44,12 @@ class VBoxManager:
         cmd = [self.vbox_path] + args
         result = subprocess.run(cmd, capture_output=capture, text=True)
         if result.returncode != 0:
-            _logger.error(f"VBox Command Failed: {result.stderr.strip() if result.stderr else 'Unknown error'}")
+            if result.stderr:
+                _logger.error(f"VBox Command Failed: {result.stderr.strip()}")
+            elif result.stdout:
+                _logger.error(f"VBox Command Failed: {result.stdout.strip()}")
+            else:
+                _logger.error("VBox Command Failed with no output.")
             raise RuntimeError("VBoxManage command failed")
         return result
 
@@ -104,13 +109,18 @@ class VBoxManager:
                 return False, unique_host_path
             _logger.info(f"[{instance_id}] Guest OS is ready.")
 
+            # --- ADD THIS BUFFER ---
+            _logger.info(f"[{instance_id}] Guest detected. Stabilizing for 15s before execution...")
+            time.sleep(15) 
+            # -----------------------
+
            # 7. Script Execution
             venv_python = os.path.join(venv_path, "Scripts", "python.exe")
             _logger.info(f"[{instance_id}] Launching guest script: {python_script[0]}")
             exec_args = [
                 "guestcontrol", instance_vm_name, "run",
                 "--username", self.user, "--password", self.password,
-                "--run-elevated", "--", venv_python
+                "--", venv_python
             ]
             
             # Combine core args with the script + script arguments
@@ -137,25 +147,22 @@ class VBoxManager:
             except Exception as cleanup_err:
                 _logger.warning(f"[{instance_id}] Cleanup encountered an error: {cleanup_err}")
 
-    def _wait_for_boot(self, vm_name: str, timeout: int = 300):
-        """
-        Polls the guest VM until Guest Additions are active and responding.
-
-        Args:
-            vm_name (str): The name of the VM instance to check.
-            timeout (int): Max seconds to wait before failing. Defaults to 300.
-
-        Returns:
-            bool: True if the guest is ready, False if timeout is reached.
-        """
+    def _wait_for_boot(self, vm_name: str, timeout: int):
         start_time = time.time()
+        # List of properties that indicate Guest Additions are alive
+        check_properties = [
+            "/VirtualBox/GuestAdd/VBoxService/Version",
+            "/VirtualBox/GuestAdd/VBoxGuestAttr/Runtime/OS/Name",
+            "/VirtualBox/GuestAdd/Components/VBoxService.exe"
+        ]
+
         while time.time() - start_time < timeout:
-            try:
-                check = self._call(["guestproperty", "get", vm_name, "/VirtualBox/GuestAdd/VBoxService/Version"])
-                if check and "Value:" in check.stdout:
-                    return True
-            except RuntimeError:
-                # Command might fail if the VM process is still initializing
-                pass
+            for prop in check_properties:
+                result = self._call(["guestproperty", "get", vm_name, prop])
+                if result.stdout and "Value:" in result.stdout:
+                    val = result.stdout.split("Value:")[1].strip()
+                    if val:
+                        _logger.info(f"[{vm_name}] Detected guest activity via {prop}")
+                        return True
             time.sleep(5)
         return False
