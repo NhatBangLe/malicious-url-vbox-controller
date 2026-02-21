@@ -42,6 +42,8 @@ def parse_args():
     )
     
     # --- Infrastructure Arguments (Host side) ---
+    parser.add_argument("--vbox-path", default="VBoxManage", 
+                        help="Path to VBoxManage executable (default: 'VBoxManage' from PATH)")
     parser.add_argument("--vm", required=True, help="Base VM name")
     parser.add_argument("--user", required=True, help="Guest OS Admin username")
     parser.add_argument("--password", required=True, help="Guest OS password")
@@ -56,6 +58,8 @@ def parse_args():
     parser.add_argument("url", type=validate_url, help="The URL to browse (must start with http/https)")
     parser.add_argument("--duration", type=int, default=30, help="Audit duration in seconds")
     parser.add_argument("--output", default="Z:\\", help="Guest-side output (Z: is usually the Shared Folder)")
+    parser.add_argument("--boot-timeout", type=int, default=300, 
+                        help="Seconds to wait for guest OS to boot (default: 300)")
 
     # --- Tool Path Overrides (Passed to Guest) ---
     parser.add_argument("--reg-path", default="C:\\tools\\RegistryChangesView.exe",
@@ -77,7 +81,8 @@ def main():
     manager = VBoxManager(
         user=args.user,
         password=args.password,
-        base_vm_name=args.vm
+        base_vm_name=args.vm,
+        vbox_path=args.vbox_path
     )
 
     # Reconstruct the arguments to be sent to the guest script
@@ -97,7 +102,8 @@ def main():
         "snapshot": args.snapshot,
         "base_host_path": args.base_host_path,
         "venv_path": args.venv,
-        "python_script": python_script_args
+        "python_script": python_script_args,
+        "boot_timeout": args.boot_timeout
     }
 
     if args.parallel > 1:
