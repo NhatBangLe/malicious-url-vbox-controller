@@ -27,7 +27,7 @@ class VBoxManager:
         self.password = password
         self.vbox_path = vbox_path
 
-    def _call(self, args: list[str], capture=True):
+    def _call(self, args: list[str], capture=True, except_error_codes: list[int] | None = None):
         """
         Executes a VBoxManage command as a subprocess.
 
@@ -42,18 +42,31 @@ class VBoxManager:
             RuntimeError: If the VBoxManage command returns a non-zero exit code.
         """
         cmd = [self.vbox_path] + args
-        result = subprocess.run(cmd, capture_output=capture, text=True)
-        if result.returncode != 0:
-            if result.stderr:
-                _logger.error(f"VBox Command Failed: {result.stderr.strip()}")
-            elif result.stdout:
-                _logger.error(f"VBox Command Failed: {result.stdout.strip()}")
-            else:
-                _logger.error("VBox Command Failed with no output.")
-            raise RuntimeError("VBoxManage command failed")
-        return result
+        _logger.debug(f"Executing: {' '.join(cmd)}")
 
-    def run_workflow(self, snapshot: str, base_host_path: str, venv_path: str, python_script: list[str], boot_timeout: int = 300):
+        try:
+            # subprocess.run is synchronous; it WILL wait for VBoxManage.exe to exit.
+            result = subprocess.run(
+                cmd, 
+                capture_output=capture, 
+                text=True, 
+                errors='replace' # Handles potential encoding issues from the guest
+            )
+            
+            if result.returncode != 0 and (except_error_codes is None or result.returncode not in except_error_codes):
+                # Get the cleanest error message possible
+                err_msg = (result.stderr or result.stdout or "No output message").strip()
+                raise RuntimeError(f'Exit code {result.returncode}. {err_msg}')
+            
+            return result
+
+        except FileNotFoundError:
+            _logger.critical(f"VBoxManage not found at: {self.vbox_path}")
+            raise RuntimeError("VirtualBox is not installed or path is incorrect.")
+
+    def run_workflow(self, snapshot: str, base_host_path: str, venv_path: str, 
+                     python_script: list[str], boot_timeout: int = 300,
+                     execution_timeout: int = 60, headless: bool = False) -> tuple[bool, str]:
         """
         Orchestrates an independent VM run: clones from snapshot, mounts a unique 
         shared folder, executes a Python script in a venv, and destroys the instance.
@@ -64,6 +77,8 @@ class VBoxManager:
             venv_path (str): The absolute path to the virtual environment folder inside the guest.
             python_script (list[str]): The script path and arguments to run (e.g., ["C:\\main.py", "--arg1"]).
             boot_timeout (int): The maximum time (in seconds) to wait for the VM to boot.
+            execution_timeout (int): The maximum time (in seconds) to wait for the guest script to complete.
+            headless (bool): Whether to start the VM in headless mode. Defaults to False.
 
         Returns:
             tuple: (bool, str) - A success flag and the absolute path to the host output directory.
@@ -72,6 +87,10 @@ class VBoxManager:
         instance_id = f"Run_{uuid.uuid4().hex[:8]}"
         instance_vm_name = f"{self.base_vm_name}_{instance_id}"
         unique_host_path = os.path.abspath(os.path.join(base_host_path, instance_id))
+
+        # --- SIGNAL SETUP ---
+        signal_filename = "AUDIT_COMPLETED" # The file name the Guest will create when finished.
+        host_signal_path = os.path.join(unique_host_path, signal_filename)
 
         _logger.info(f"[{instance_id}] Starting workflow orchestration.")
         _logger.debug(f"[{instance_id}] Target Snapshot: {snapshot}")
@@ -99,8 +118,8 @@ class VBoxManager:
                         "--automount"])
 
             # 5. Power On
-            _logger.info(f"[{instance_id}] Powering on VM (headless mode)")
-            self._call(["startvm", instance_vm_name, "--type", "headless"])
+            _logger.info(f"[{instance_id}] Powering on VM")
+            self._call(["startvm", instance_vm_name, "--type", "headless" if headless else "gui"])
 
             # 6. Boot Monitoring
             _logger.info(f"[{instance_id}] Waiting for Guest Additions (Timeout: {boot_timeout}s)")
@@ -108,61 +127,105 @@ class VBoxManager:
                 _logger.error(f"[{instance_id}] CRITICAL: Boot timeout reached. Guest OS failed to respond.")
                 return False, unique_host_path
             _logger.info(f"[{instance_id}] Guest OS is ready.")
-
-            # --- ADD THIS BUFFER ---
             _logger.info(f"[{instance_id}] Guest detected. Stabilizing for 15s before execution...")
             time.sleep(15) 
-            # -----------------------
 
-           # 7. Script Execution
-            venv_python = os.path.join(venv_path, "Scripts", "python.exe")
+            # 7. Script Execution
             _logger.info(f"[{instance_id}] Launching guest script: {python_script[0]}")
+            
+            guest_script_path = python_script[0]
+            opt_script_args = " ".join(arg for arg in python_script[2:]) # Quote each argument for PowerShell
+            script_args = f"{python_script[1]} --signal-file \"{signal_filename}\" {opt_script_args}"
+
+            # Activates the venv and runs python.
+            script_block = (
+                f"Set-ExecutionPolicy Bypass -Scope Process -Force;"
+                f"& {os.path.join(venv_path, 'Scripts', 'Activate.ps1')};"
+                f"& python \"{guest_script_path}\" {script_args};"
+            )
+            
+            pwsh_launcher = (
+                f"Start-Process -FilePath \"powershell\" -Verb RunAs -ArgumentList "
+                f"('-NoProfile', '-NoExit', '-NonInteractive', '-Command', '{script_block}');"
+            )
+
+            # Construct the final list of arguments for VBoxManage
             exec_args = [
                 "guestcontrol", instance_vm_name, "run",
                 "--username", self.user, "--password", self.password,
-                "--", venv_python
+                "--", "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", 
+                "-NoProfile", "-NonInteractive", "-Command", pwsh_launcher
             ]
+            try: self._call(exec_args)
+            except: pass
             
-            # Combine core args with the script + script arguments
-            self._call(exec_args + python_script)
-            _logger.info(f"[{instance_id}] Guest script execution completed successfully.")
-            return True, unique_host_path
+            # 8. POLLING: Check whether the guest script has signaled completion by creating a file in the shared folder
+            _logger.info(f"[{instance_id}] Waiting for completion signal...")
+            
+            start_poll = time.time()
+            success = False
+            
+            while (time.time() - start_poll) < execution_timeout:
+                if os.path.exists(host_signal_path):
+                    _logger.info(f"[{instance_id}] Signal detected. Execution completed.")
+                    success = True
+                    time.sleep(5) # Wait before cleanup to ensure all file operations are finished on the guest side
+                    break
+                time.sleep(2) # Frequency of folder check
+            
+            if not success:
+                _logger.warning(f"[{instance_id}] Timed out after {execution_timeout}s.")
+            
+            _logger.info(f"[{instance_id}] Guest script finished successfully.")
+            return success, unique_host_path
         except Exception as e:
             _logger.error(f"Error in instance {instance_id}: {e}")
             return False, unique_host_path
         finally:
-            # 8. Teardown
-            _logger.info(f"[{instance_id}] Initiating cleanup and VM destruction.")
-            try:
-                # We use a broader check to ensure we try to delete even if poweroff fails
-                _logger.debug(f"[{instance_id}] Sending poweroff signal...")
-                self._call(["controlvm", instance_vm_name, "poweroff"])
-                
-                # Give VirtualBox a moment to release file locks
-                time.sleep(3) 
-                
-                _logger.debug(f"[{instance_id}] Unregistering and deleting VM files...")
-                self._call(["unregistervm", instance_vm_name, "--delete"])
-                _logger.info(f"[{instance_id}] Cleanup complete. Instance destroyed.")
-            except Exception as cleanup_err:
-                _logger.warning(f"[{instance_id}] Cleanup encountered an error: {cleanup_err}")
+            self._cleanup_vm(instance_vm_name)
+            
+            # Cleanup signal on Host
+            if os.path.exists(host_signal_path):
+                try: os.remove(host_signal_path)
+                except: pass
+            
+    def _cleanup_vm(self, vm_name: str):
+        _logger.info(f"[{vm_name}] Initiating cleanup and VM destruction.")
+        try:
+            # We use a broader check to ensure we try to delete even if poweroff fails
+            _logger.debug(f"[{vm_name}] Sending poweroff signal...")
+            self._call(["controlvm", vm_name, "poweroff"])
+            
+            # Give VirtualBox a moment to release file locks
+            time.sleep(3) 
+            
+            _logger.debug(f"[{vm_name}] Unregistering and deleting VM files...")
+            self._call(["unregistervm", vm_name, "--delete"])
+            _logger.info(f"[{vm_name}] Cleanup complete. Instance destroyed.")
+        except Exception as cleanup_err:
+            _logger.warning(f"[{vm_name}] Cleanup encountered an error: {cleanup_err}")
 
     def _wait_for_boot(self, vm_name: str, timeout: int):
         start_time = time.time()
-        # List of properties that indicate Guest Additions are alive
-        check_properties = [
-            "/VirtualBox/GuestAdd/VBoxService/Version",
-            "/VirtualBox/GuestAdd/VBoxGuestAttr/Runtime/OS/Name",
-            "/VirtualBox/GuestAdd/Components/VBoxService.exe"
-        ]
+        _logger.info(f"[{vm_name}] Waiting for full OS initialization (User Shell)...")
 
         while time.time() - start_time < timeout:
-            for prop in check_properties:
-                result = self._call(["guestproperty", "get", vm_name, prop])
-                if result.stdout and "Value:" in result.stdout:
+            try:
+                # This property specifically tracks active user sessions
+                result = self._call(["guestproperty", "get", vm_name, "/VirtualBox/GuestInfo/OS/LoggedInUsersList"])
+                
+                if "Value:" in result.stdout:
+                    # If it's not empty, someone is logged in and the desktop is ready
                     val = result.stdout.split("Value:")[1].strip()
                     if val:
-                        _logger.info(f"[{vm_name}] Detected guest activity via {prop}")
+                        _logger.info(f"[{vm_name}] Shell detected. User(s) logged in: {val}")
+                        # Add a 10s "settle" time for the desktop to finish loading icons/startup apps
+                        time.sleep(10)
                         return True
+            except Exception:
+                pass
+            
             time.sleep(5)
+            _logger.debug(f"[{vm_name}] OS still loading... ({int(time.time() - start_time)}s)")
+            
         return False

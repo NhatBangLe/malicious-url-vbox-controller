@@ -74,6 +74,8 @@ def parse_args():
     parser.add_argument("--venv", required=True, help="Path to guest venv")
     parser.add_argument("--guest-script", required=True, help="Path to guest audit script")
     parser.add_argument("--parallel", type=int, default=1, help="Number of instances")
+    parser.add_argument("--execution-timeout", type=int, default=300, 
+                        help="Max seconds to wait for guest script execution (default: 300)")
     parser.add_argument("--base-host-path", default="./Audit_Results", 
                         help="Host directory for results (default: ./Audit_Results)")
 
@@ -83,14 +85,12 @@ def parse_args():
     parser.add_argument("--output", default="Z:\\", help="Guest-side output (Z: is usually the Shared Folder)")
     parser.add_argument("--boot-timeout", type=int, default=300, 
                         help="Seconds to wait for guest OS to boot (default: 300)")
+    parser.add_argument("--headless", action='store_true', default=False, help="Start VMs in headless mode (no GUI)")
 
     # --- Tool Path Overrides (Passed to Guest) ---
-    parser.add_argument("--reg-path", default="C:\\tools\\RegistryChangesView.exe",
-                        help="Path to RegistryChangesView.exe")
-    parser.add_argument("--procmon-path", default="C:\\tools\\Procmon.exe",
-                        help="Path to Procmon.exe")
-    parser.add_argument("--tshark-path", default="C:\\Program Files\\Wireshark\\tshark.exe",
-                        help="Path to tshark.exe")
+    parser.add_argument("--reg-path", default=None, help="Path to RegistryChangesView.exe")
+    parser.add_argument("--procmon-path", default=None, help="Path to Procmon.exe")
+    parser.add_argument("--tshark-path", default=None, help="Path to tshark.exe")
     parser.add_argument("--iface", type=int, default=1, help="TShark Interface ID (default: 1)")
     parser.add_argument("--tshark-fields", nargs='*', default=None,  
                         help="Optional list of TShark fields to export (e.g., --tshark-fields frame.time ip.src ip.dst)")
@@ -113,9 +113,12 @@ def main():
     python_script_args = [args.guest_script, args.url]
     python_script_args += ["--duration", str(args.duration)]
     python_script_args += ["--output", args.output]
-    python_script_args += ["--reg-path", args.reg_path]
-    python_script_args += ["--procmon-path", args.procmon_path]
-    python_script_args += ["--tshark-path", args.tshark_path]
+    if args.reg_path is not None:
+        python_script_args += ["--reg-path", args.reg_path]
+    if args.procmon_path is not None:
+        python_script_args += ["--procmon-path", args.procmon_path]
+    if args.tshark_path is not None:
+        python_script_args += ["--tshark-path", args.tshark_path]
     python_script_args += ["--iface", str(args.iface)]
     
     if args.tshark_fields:
@@ -126,7 +129,9 @@ def main():
         "base_host_path": args.base_host_path,
         "venv_path": args.venv,
         "python_script": python_script_args,
-        "boot_timeout": args.boot_timeout
+        "boot_timeout": args.boot_timeout,
+        "execution_timeout": int(args.execution_timeout),
+        "headless": bool(args.headless)
     }
 
     if args.parallel > 1:
