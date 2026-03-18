@@ -8,10 +8,13 @@ PASS="admin"
 SNAPSHOT="Ready_Run_Audit"
 GUEST_SCRIPT="C:\\script\\main.py"
 BASE_HOST_PATH="./Audit_Results"
-PARALLEL=1
 RUN_HEADLESS=false
+SOURCE_API_KEY=<your-api-key>
+SOURCE=abuse
+SOURCE_FETCH_MODE=past30
 
 # --- Default Audit & Performance Settings ---
+MAX_URL=1
 DURATION=30
 EXECUTION_TIMEOUT=300
 BOOT_TIMEOUT=300
@@ -29,23 +32,26 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 usage() {
-    echo -e "${YELLOW}Usage:${NC} $0 [url] [options]"
+    echo -e "${YELLOW}Usage:${NC} $0 [options]"
     echo ""
     echo "Options:"
-    echo "  --parallel [int]       Number of instances (default: 1)"
-    echo "  --duration [sec]       Audit time per instance (default: 30)"
+    echo "  --source [string]                 Source for malicious URLs (default: "abuse"). Supported: abuse"
+    echo "  --api-key [string]                (Optional) API key for fetching malicious URLs from your source."
+    echo "  --fetch-mode [string]             Mode for fetching malicious URLs (default: "past30"). Supported: past30, only_active"
+    echo "  --max-url [number]                Maximum number of URLs to audit. (audits all if omitted)"
+    echo "  --duration [sec]                  Audit time per instance (default: 30)"
     echo "  --execution-timeout [sec]         Max time to wait for guest script execution (default: 300)"
-    echo "  --boot-timeout [sec]   Wait time for OS boot (default: 300)"
-    echo "  --vbox-path [path]     Path to VBoxManage executable"
-    echo "  --snapshot [name]      Snapshot to clone"
-    echo "  --host-path [path]     Host directory for logs"
-    echo "  --fields \"f1 f2\"       TShark fields to export"
+    echo "  --boot-timeout [sec]              Wait time for OS boot (default: 300)"
+    echo "  --vbox-path [path]                Path to VBoxManage executable"
+    echo "  --snapshot [name]                 Snapshot to clone"
+    echo "  --host-path [path]                Host directory for logs"
+    echo "  --fields \"f1 f2\"                TShark fields to export"
     echo ""
     exit 1
 }
 
 # 1. Basic Argument Check
-if [ -z "$1" ] || [[ "$1" == "--help" ]]; then usage; fi
+if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then usage; fi
 
 URL=$1
 shift 
@@ -53,7 +59,10 @@ shift
 # 2. Parse Options
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --parallel) PARALLEL="$2"; shift ;;
+        --fetch-mode) SOURCE_FETCH_MODE="$2"; shift ;;
+        --source) SOURCE="$2"; shift ;;
+        --api-key) SOURCE_API_KEY="$2"; shift ;;
+        --max-url) MAX_URL="$2"; shift ;;
         --duration) DURATION="$2"; shift ;;
         --execution-timeout) EXECUTION_TIMEOUT="$2"; shift ;;
         --boot-timeout) BOOT_TIMEOUT="$2"; shift ;;
@@ -67,33 +76,24 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 # 3. Pre-flight Checks
-if [[ ! "$URL" =~ ^https?:// ]]; then
-    echo -e "${RED}Error:${NC} URL must start with http:// or https://"
-    exit 1
-fi
-
 if [[ ! -f "main.py" ]]; then
     echo -e "${RED}Error:${NC} main.py not found in current directory."
     exit 1
 fi
 
 echo -e "${GREEN}Preparing Orchestration...${NC}"
-echo -e "Target:   ${YELLOW}$URL${NC}"
-echo -e "Parallel: ${YELLOW}$PARALLEL instance(s)${NC}"
 
 # 4. Construct Command Array
 CMD_ARGS=(
     python main.py
-    "$URL"
     --vbox-path "$VBOX_PATH"
     --vm "$VM_NAME"
     --user "$USER"
     --password "$PASS"
     --snapshot "$SNAPSHOT"
-    --execution-timeout "$EXECUTION_TIMEOUT"
     --guest-script "$GUEST_SCRIPT"
+    --execution-timeout "$EXECUTION_TIMEOUT"
     --base-host-path "$BASE_HOST_PATH"
-    --parallel "$PARALLEL"
     --duration "$DURATION"
     --boot-timeout "$BOOT_TIMEOUT"
     --output "$GUEST_OUTPUT"
@@ -102,6 +102,23 @@ CMD_ARGS=(
     --tshark-path "$TSHARK_PATH"
     --iface "$IFACE"
 )
+
+if [[ -n "$MAX_URL" ]]; then
+    CMD_ARGS+=(--max-url "$MAX_URL")
+fi
+
+if [[ -n "$SOURCE" ]]; then
+    CMD_ARGS+=(--source "$SOURCE")
+fi
+
+if [[ -n "$SOURCE_FETCH_MODE" ]]; then
+    CMD_ARGS+=(--fetch-mode "$SOURCE_FETCH_MODE")
+fi
+
+# Only add API key flag if it's not empty
+if [[ -n "$SOURCE_API_KEY" ]]; then
+    CMD_ARGS+=(--api-key "$SOURCE_API_KEY")
+fi
 
 # Append headless flag if set
 if [ "$RUN_HEADLESS" = true ]; then

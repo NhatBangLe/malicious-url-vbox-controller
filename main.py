@@ -1,19 +1,61 @@
 import argparse
+import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 import textwrap
+from controllers.abuse_url_haus import (
+    AbuseURLhausController,
+    AbuseURLhausControllerOptions,
+)
 from data import ScriptArguments
 from helpers import setup_logging
-from vbox_manager import VBoxManager
+from controllers.vbox import VBoxController
+
+SUPPORTED_SOURCES = {"ABUSE_HAUS": "abuse"}
+DEFAULT_SOURCE = SUPPORTED_SOURCES["ABUSE_HAUS"]
+SUPPORTED_FETCH_MODES = {"PAST_30DAYS": "past30", "ONLY_ACTIVE": "only_active"}
+DEFAULT_FETCH_MODE = SUPPORTED_FETCH_MODES["PAST_30DAYS"]
 
 
-def validate_url(url: str):
-    """Basic validation to ensure the URL is well-formed before starting VMs."""
-    if not url.startswith(("http://", "https://")):
-        raise argparse.ArgumentTypeError(
-            f"Invalid URL '{url}'. Must start with http:// or https://"
-        )
-    return url
+def check_source(source: str):
+    supported_sources = list(SUPPORTED_SOURCES.values())
+
+    if source not in supported_sources:
+        return DEFAULT_SOURCE
+    return source
+
+
+def check_fetch_mode(mode: str):
+    supported_modes = list(SUPPORTED_FETCH_MODES.values())
+
+    if mode not in supported_modes:
+        return DEFAULT_FETCH_MODE
+    return mode
+
+
+def get_target_urls(source: str, api_key: str | None, mode: str):
+    target_urls: list[str] = []
+
+    if source == SUPPORTED_SOURCES["ABUSE_HAUS"]:
+        if not api_key:
+            raise
+        options = AbuseURLhausControllerOptions(api_key=api_key)
+        ctrl = AbuseURLhausController(options)
+
+        if mode == SUPPORTED_FETCH_MODES["PAST_30DAYS"]:
+            data = ctrl.get_past30_urls()
+        elif mode == SUPPORTED_FETCH_MODES["ONLY_ACTIVE"]:
+            data = ctrl.get_active_urls()
+        else:
+            data = ctrl.get_past30_urls()
+
+        if data:
+            with open("abuse_fetched_urls.json", "w") as f:
+                ready_to_dump = list(map(lambda e: e.__dict__, data))
+                json.dump(ready_to_dump, f, indent=2)
+            target_urls = list(map(lambda e: e.url, data))
+
+    return target_urls
 
 
 def parse_args():
@@ -22,15 +64,8 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         usage=textwrap.dedent(
             """\n
-            # Single audit run:
             python main.py --vm "Win10_Base" --user "Admin" --password "Pass123" \\
-                           --snapshot "Ready" --venv "C:\\venv" --guest-script "C:\\audit.py" \\
-                           "https://example.com" --duration 60
-
-            # Parallel audit (3 instances at once):
-            python main.py --vm "Win10_Base" --user "Admin" --password "Pass123" \\
-                           --snapshot "Ready" --venv "C:\\venv" --guest-script "C:\\audit.py" \\
-                           "https://suspicious.site" --parallel 3 --tshark-fields ip.src ip.dst
+                           --snapshot "Ready" --guest-script "C:\\audit.py" --duration 60
             """
         ),
     )
@@ -48,7 +83,6 @@ def parse_args():
     parser.add_argument(
         "--guest-script", required=True, help="Path to guest audit script"
     )
-    parser.add_argument("--parallel", type=int, default=1, help="Number of instances")
     parser.add_argument(
         "--execution-timeout",
         type=int,
@@ -60,11 +94,26 @@ def parse_args():
         default="./Audit_Results",
         help="Host directory for results (default: ./Audit_Results)",
     )
+    parser.add_argument(
+        "--source",
+        type=check_source,
+        default=DEFAULT_SOURCE,
+        help=f'Source for malicious URLs (default: "{DEFAULT_SOURCE}"). Supported: {list(SUPPORTED_SOURCES.values())}',
+    )
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        help="(Optional) API key for fetching malicious URLs from your source.",
+    )
+    parser.add_argument(
+        "--fetch-mode",
+        type=check_fetch_mode,
+        default=DEFAULT_FETCH_MODE,
+        help=f'Mode for fetching malicious URLs (default: "{DEFAULT_FETCH_MODE}"). Supported: {list(SUPPORTED_FETCH_MODES.values())}',
+    )
 
     # --- Audit Arguments (Passed to Guest) ---
-    parser.add_argument(
-        "url", type=validate_url, help="The URL to browse (must start with http/https)"
-    )
+    parser.add_argument("--max-url", help="Maximum number of URLs to audit.")
     parser.add_argument(
         "--duration", type=int, default=30, help="Audit duration in seconds"
     )
@@ -107,50 +156,57 @@ def parse_args():
 
 def main():
     args = parse_args()
+    workflow_params = {
+        "snapshot": args.snapshot,
+        "base_host_path": args.base_host_path,
+        "boot_timeout": args.boot_timeout,
+        "execution_timeout": int(args.execution_timeout),
+        "headless": bool(args.headless),
+    }
 
-    manager = VBoxManager(
+    target_urls: list[str] = get_target_urls(
+        source=args.source, api_key=args.api_key, mode=args.fetch_mode
+    )
+    if args.max_url:
+        target_urls = target_urls[: int(args.max_url)]
+
+    manager = VBoxController(
         user=args.user,
         password=args.password,
         base_vm_name=args.vm,
         vbox_path=args.vbox_path,
     )
 
-    script_args = ScriptArguments(
-        script_path=str(args.guest_script),
-        target_url=str(args.url),
-        duration=int(args.duration),
-        output_path=str(args.output),
-        interface_num=int(args.iface),
-        tshark_path=str(args.tshark_path),
-        tshark_fields=args.tshark_fields,
-        procmon_path=str(args.procmon_path),
-        regview_path=str(args.reg_path),
-    )
+    total_urls = len(target_urls)
+    if total_urls == 0:
+        logging.info(f"No URL to audit.")
+        return
 
-    workflow_params = {
-        "snapshot": args.snapshot,
-        "base_host_path": args.base_host_path,
-        "script_args": script_args,
-        "boot_timeout": args.boot_timeout,
-        "execution_timeout": int(args.execution_timeout),
-        "headless": bool(args.headless),
-    }
-
-    if args.parallel > 1:
-        logging.info(f"Launching {args.parallel} parallel audits...")
-        with ThreadPoolExecutor(max_workers=args.parallel) as executor:
-            futures = [
-                executor.submit(manager.run_workflow, **workflow_params)
-                for _ in range(args.parallel)
-            ]
-            for future in futures:
-                success, path = future.result()
-                logging.info(
-                    f"Audit at {path} completed: {'SUCCESS' if success else 'FAILED'}"
-                )
-    else:
-        success, path = manager.run_workflow(**workflow_params)
-        logging.info(f"Audit finished. Host results in: {path}")
+    logging.info(f"Launching audits for {total_urls} URL(s)...")
+    with ThreadPoolExecutor(max_workers=total_urls) as executor:
+        futures = [
+            executor.submit(
+                manager.run_workflow,
+                **workflow_params,
+                script_args=ScriptArguments(
+                    script_path=str(args.guest_script),
+                    target_url=target_url,
+                    duration=int(args.duration),
+                    output_path=str(args.output),
+                    interface_num=int(args.iface),
+                    tshark_path=str(args.tshark_path),
+                    tshark_fields=args.tshark_fields,
+                    procmon_path=str(args.procmon_path),
+                    regview_path=str(args.reg_path),
+                ),
+            )
+            for target_url in target_urls
+        ]
+        for future in futures:
+            success, path = future.result()
+            logging.info(
+                f"Audit at {path} completed: {'SUCCESS' if success else 'FAILED'}"
+            )
 
 
 if __name__ == "__main__":

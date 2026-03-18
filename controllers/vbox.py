@@ -11,7 +11,7 @@ from data import ScriptArguments
 _logger = logging.getLogger(__name__)
 
 
-class VBoxManager:
+class VBoxController:
     """
     Manages VirtualBox VM lifecycles by creating independent linked clones,
     executing guest scripts with admin privileges, and cleaning up instances.
