@@ -1,4 +1,3 @@
-
 from dataclasses import dataclass
 
 
@@ -6,6 +5,7 @@ from dataclasses import dataclass
 class ScriptArguments:
     script_path: str
     target_url: str
+    signal_file: str = "AUDIT_COMPLETED"
     duration: int = 30
     output_path: str = "Z:\\"
     regview_path: str | None = None

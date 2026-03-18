@@ -115,12 +115,6 @@ class VBoxManager:
         instance_vm_name = f"{self.base_vm_name}_{instance_id}"
         unique_host_path = os.path.abspath(os.path.join(base_host_path, instance_id))
 
-        # --- SIGNAL SETUP ---
-        signal_filename = (
-            "AUDIT_COMPLETED"  # The file name the Guest will create when finished.
-        )
-        host_signal_path = os.path.join(unique_host_path, signal_filename)
-
         _logger.info(f"[{instance_id}] Starting workflow...")
         _logger.debug(f"[{instance_id}] Target Snapshot: {snapshot}")
 
@@ -201,10 +195,7 @@ class VBoxManager:
             )
             with open(host_config_path, "w", encoding="utf-8") as f:
                 json.dump(
-                    {
-                        **script_args.__dict__,
-                        "signal_file": signal_filename,
-                    },
+                    script_args.__dict__,
                     f,
                     indent=2,
                 )
@@ -232,6 +223,7 @@ class VBoxManager:
 
             start_poll = time.time()
             success = False
+            host_signal_path = os.path.join(unique_host_path, script_args.signal_file)
 
             while (time.time() - start_poll) < execution_timeout:
                 if os.path.exists(host_signal_path):
@@ -249,6 +241,12 @@ class VBoxManager:
                 _logger.warning(
                     f"[{instance_id}] Timed out after {execution_timeout}s."
                 )
+            elif os.path.exists(host_signal_path):
+                # Cleanup signal on Host
+                try:
+                    os.remove(host_signal_path)
+                except:
+                    pass
 
             _logger.info(f"[{instance_id}] Guest script finished successfully.")
             return success, unique_host_path
@@ -258,13 +256,6 @@ class VBoxManager:
         finally:
             if clean_up:
                 self._cleanup_vm(instance_vm_name)
-
-            # Cleanup signal on Host
-            if os.path.exists(host_signal_path):
-                try:
-                    os.remove(host_signal_path)
-                except:
-                    pass
 
     def _cleanup_vm(self, vm_name: str):
         _logger.info(f"[{vm_name}] Initiating cleanup and VM destruction.")
