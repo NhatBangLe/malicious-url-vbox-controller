@@ -19,7 +19,7 @@ GUEST_OUTPUT="Z:\\"
 IFACE=4
 REG_PATH="C:\\script\\regview\\regview.exe"
 PROCMON_PATH="C:\\script\\procmon\\Procmon.exe"
-TSHARK_PATH="\"\"\"C:\\Program Files\\Wireshark\\tshark.exe\"\"\"" # Triple quotes to handle spaces in path when passed as a single argument
+TSHARK_PATH="C:\\Program Files\\Wireshark\\tshark.exe"
 TSHARK_FIELDS="frame.number frame.time frame.len ip.src ip.dst tcp.srcport tcp.dstport http.request.method http.request.uri"
 
 # --- Colors for Terminal ---
