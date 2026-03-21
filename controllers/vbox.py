@@ -180,9 +180,9 @@ class VBoxController:
                 return False, unique_host_path
             _logger.info(f"[{instance_id}] Guest OS is ready.")
             _logger.info(
-                f"[{instance_id}] Guest detected. Stabilizing for 15s before execution..."
+                f"[{instance_id}] Guest detected. Stabilizing for 10s before execution..."
             )
-            time.sleep(15)
+            time.sleep(10)
 
             # 7. Write a config file in guest
             _logger.info(f"[{instance_id}] Building guest config...")
@@ -190,9 +190,7 @@ class VBoxController:
             # Write a config file
             config_filename = "config.json"
             host_config_path = os.path.join(unique_host_path, config_filename)
-            guest_config_path = os.path.join(
-                Path(script_args.script_path).parent, config_filename
-            )
+            guest_config_path = os.path.join(script_args.script_path, config_filename)
             with open(host_config_path, "w", encoding="utf-8") as f:
                 json.dump(
                     script_args.__dict__,

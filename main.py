@@ -81,7 +81,9 @@ def parse_args():
     parser.add_argument("--password", required=True, help="Guest OS password")
     parser.add_argument("--snapshot", required=True, help="Snapshot to clone")
     parser.add_argument(
-        "--guest-script", required=True, help="Path to guest audit script"
+        "--script-path",
+        required=True,
+        help="Path to the directory containing the script in the guest",
     )
     parser.add_argument(
         "--execution-timeout",
@@ -167,8 +169,6 @@ def main():
     target_urls: list[str] = get_target_urls(
         source=args.source, api_key=args.api_key, mode=args.fetch_mode
     )
-    if args.max_url:
-        target_urls = target_urls[: int(args.max_url)]
 
     manager = VBoxController(
         user=args.user,
@@ -181,32 +181,31 @@ def main():
     if total_urls == 0:
         logging.info(f"No URL to audit.")
         return
+    logging.info(f"Found {total_urls} URL(s) to audit.")
 
-    logging.info(f"Launching audits for {total_urls} URL(s)...")
-    with ThreadPoolExecutor(max_workers=total_urls) as executor:
-        futures = [
-            executor.submit(
-                manager.run_workflow,
-                **workflow_params,
-                script_args=ScriptArguments(
-                    script_path=str(args.guest_script),
-                    target_url=target_url,
-                    duration=int(args.duration),
-                    output_path=str(args.output),
-                    interface_num=int(args.iface),
-                    tshark_path=str(args.tshark_path),
-                    tshark_fields=args.tshark_fields,
-                    procmon_path=str(args.procmon_path),
-                    regview_path=str(args.reg_path),
-                ),
-            )
-            for target_url in target_urls
-        ]
-        for future in futures:
-            success, path = future.result()
-            logging.info(
-                f"Audit at {path} completed: {'SUCCESS' if success else 'FAILED'}"
-            )
+    total_run = int(args.max_url) if args.max_url else total_urls
+    logging.info(f"Launching {total_run} audits...")
+    args_list = [
+        ScriptArguments(
+            script_path=str(args.script_path),
+            target_url=target_url,
+            duration=int(args.duration),
+            output_path=str(args.output),
+            interface_num=int(args.iface),
+            tshark_path=str(args.tshark_path),
+            tshark_fields=args.tshark_fields,
+            procmon_path=str(args.procmon_path),
+            regview_path=str(args.reg_path),
+        )
+        for target_url in target_urls[:total_run]
+    ]
+    for workflow_args in args_list:
+        success, path = manager.run_workflow(
+            **workflow_params, script_args=workflow_args
+        )
+        logging.info(f"Audit at {path} completed: {'SUCCESS' if success else 'FAILED'}")
+
+    logging.info(f"Launched {total_run} audit(s) for {total_urls} URL(s).")
 
 
 if __name__ == "__main__":

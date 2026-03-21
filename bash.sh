@@ -6,7 +6,7 @@ VM_NAME="Win10"
 USER="admin"
 PASS="admin"
 SNAPSHOT="Ready_Run_Audit"
-GUEST_SCRIPT="C:\\script\\main.py"
+SCRIPT_PATH="C:\\script"
 BASE_HOST_PATH="./Audit_Results"
 RUN_HEADLESS=false
 SOURCE_API_KEY=<your-api-key>
@@ -14,7 +14,7 @@ SOURCE=abuse
 SOURCE_FETCH_MODE=past30
 
 # --- Default Audit & Performance Settings ---
-MAX_URL=1
+MAX_URL=2
 DURATION=30
 EXECUTION_TIMEOUT=300
 BOOT_TIMEOUT=300
@@ -91,7 +91,7 @@ CMD_ARGS=(
     --user "$USER"
     --password "$PASS"
     --snapshot "$SNAPSHOT"
-    --guest-script "$GUEST_SCRIPT"
+    --script-path "$SCRIPT_PATH"
     --execution-timeout "$EXECUTION_TIMEOUT"
     --base-host-path "$BASE_HOST_PATH"
     --duration "$DURATION"
