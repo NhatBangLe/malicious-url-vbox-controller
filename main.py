@@ -1,61 +1,11 @@
 import argparse
-import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
 import textwrap
-from controllers.abuse_url_haus import (
-    AbuseURLhausController,
-    AbuseURLhausControllerOptions,
-)
+from urls import DEFAULT_FETCH_MODE, DEFAULT_SOURCE
 from data import ScriptArguments
 from helpers import setup_logging
 from controllers.vbox import VBoxController
-
-SUPPORTED_SOURCES = {"ABUSE_HAUS": "abuse"}
-DEFAULT_SOURCE = SUPPORTED_SOURCES["ABUSE_HAUS"]
-SUPPORTED_FETCH_MODES = {"PAST_30DAYS": "past30", "ONLY_ACTIVE": "only_active"}
-DEFAULT_FETCH_MODE = SUPPORTED_FETCH_MODES["PAST_30DAYS"]
-
-
-def check_source(source: str):
-    supported_sources = list(SUPPORTED_SOURCES.values())
-
-    if source not in supported_sources:
-        return DEFAULT_SOURCE
-    return source
-
-
-def check_fetch_mode(mode: str):
-    supported_modes = list(SUPPORTED_FETCH_MODES.values())
-
-    if mode not in supported_modes:
-        return DEFAULT_FETCH_MODE
-    return mode
-
-
-def get_target_urls(source: str, api_key: str | None, mode: str):
-    target_urls: list[str] = []
-
-    if source == SUPPORTED_SOURCES["ABUSE_HAUS"]:
-        if not api_key:
-            raise
-        options = AbuseURLhausControllerOptions(api_key=api_key)
-        ctrl = AbuseURLhausController(options)
-
-        if mode == SUPPORTED_FETCH_MODES["PAST_30DAYS"]:
-            data = ctrl.get_past30_urls()
-        elif mode == SUPPORTED_FETCH_MODES["ONLY_ACTIVE"]:
-            data = ctrl.get_active_urls()
-        else:
-            data = ctrl.get_past30_urls()
-
-        if data:
-            with open("abuse_fetched_urls.json", "w") as f:
-                ready_to_dump = list(map(lambda e: e.__dict__, data))
-                json.dump(ready_to_dump, f, indent=2)
-            target_urls = list(map(lambda e: e.url, data))
-
-    return target_urls
+from urls.helper import TargetURLHelper
 
 
 def parse_args():
@@ -98,9 +48,9 @@ def parse_args():
     )
     parser.add_argument(
         "--source",
-        type=check_source,
+        type=str,
         default=DEFAULT_SOURCE,
-        help=f'Source for malicious URLs (default: "{DEFAULT_SOURCE}"). Supported: {list(SUPPORTED_SOURCES.values())}',
+        help=f'Source for malicious URLs (default: "{DEFAULT_SOURCE}"), case insensitive. Supported: ABUSE_HAUS',
     )
     parser.add_argument(
         "--api-key",
@@ -109,9 +59,9 @@ def parse_args():
     )
     parser.add_argument(
         "--fetch-mode",
-        type=check_fetch_mode,
+        type=str,
         default=DEFAULT_FETCH_MODE,
-        help=f'Mode for fetching malicious URLs (default: "{DEFAULT_FETCH_MODE}"). Supported: {list(SUPPORTED_FETCH_MODES.values())}',
+        help=f'Mode for fetching malicious URLs (default: "{DEFAULT_FETCH_MODE}"), case insensitive. Supported: PAST_30DAYS, ONLY_ACTIVE',
     )
 
     # --- Audit Arguments (Passed to Guest) ---
@@ -166,9 +116,8 @@ def main():
         "headless": bool(args.headless),
     }
 
-    target_urls: list[str] = get_target_urls(
-        source=args.source, api_key=args.api_key, mode=args.fetch_mode
-    )
+    handler = TargetURLHelper.get_handler(source=args.source, api_key=args.api_key)
+    target_urls: list[str] = handler.get_urls(mode=args.fetch_mode)
 
     manager = VBoxController(
         user=args.user,
