@@ -141,10 +141,10 @@ def main():
             duration=int(args.duration),
             output_path=str(args.output),
             interface_num=int(args.iface),
-            tshark_path=str(args.tshark_path),
             tshark_fields=args.tshark_fields,
-            procmon_path=str(args.procmon_path),
-            regview_path=str(args.reg_path),
+            tshark_path=args.tshark_path,
+            procmon_path=args.procmon_path,
+            regview_path=args.reg_path,
         )
         for target_url in target_urls[:total_run]
     ]

@@ -2,28 +2,30 @@
 
 # --- Default Infrastructure Settings ---
 VBOX_PATH="C:\\Program Files\\Oracle\\VirtualBox\\VBoxManage.exe"
-VM_NAME="Win10"
+VM_NAME="Win7-Pro-x64"
 USER="admin"
 PASS="admin"
-SNAPSHOT="Ready_Run_Audit"
-SCRIPT_PATH="C:\\script"
+SNAPSHOT="Base"
+SCRIPT_PATH="C:\\Users\\admin\\Desktop\\script"
 BASE_HOST_PATH="./Audit_Results"
 RUN_HEADLESS=false
 SOURCE_API_KEY=<your-api-key>
 SOURCE=abuse
-SOURCE_FETCH_MODE=past30
+SOURCE_FETCH_MODE=past_30days
 
 # --- Default Audit & Performance Settings ---
-MAX_URL=2
+MAX_URL=1
 DURATION=30
-EXECUTION_TIMEOUT=300
-BOOT_TIMEOUT=300
 GUEST_OUTPUT="Z:\\"
-IFACE=4
-REG_PATH="C:\\script\\regview\\regview.exe"
-PROCMON_PATH="C:\\script\\procmon\\Procmon.exe"
-TSHARK_PATH="C:\\Program Files\\Wireshark\\tshark.exe"
-TSHARK_FIELDS="frame.number frame.time frame.len ip.src ip.dst tcp.srcport tcp.dstport http.request.method http.request.uri"
+IFACE=4 # Adjust based on your Wireshark configuration
+
+# --- Optional Tool Paths & Configurations ---
+# EXECUTION_TIMEOUT=300
+# BOOT_TIMEOUT=300
+# REG_PATH="C:\\script\\regview\\regview.exe"
+# PROCMON_PATH="C:\\script\\procmon\\Procmon.exe"
+# TSHARK_PATH="C:\\Program Files\\Wireshark\\tshark.exe"
+# TSHARK_FIELDS="frame.number frame.time frame.len ip.src ip.dst tcp.srcport tcp.dstport http.request.method http.request.uri"
 
 # --- Colors for Terminal ---
 GREEN='\033[0;32m'
@@ -45,6 +47,7 @@ usage() {
     echo "  --vbox-path [path]                Path to VBoxManage executable"
     echo "  --snapshot [name]                 Snapshot to clone"
     echo "  --host-path [path]                Host directory for logs"
+    echo "  --iface [number]                  Network interface number for tshark (default: 4)"
     echo "  --fields \"f1 f2\"                TShark fields to export"
     echo ""
     exit 1
@@ -92,16 +95,20 @@ CMD_ARGS=(
     --password "$PASS"
     --snapshot "$SNAPSHOT"
     --script-path "$SCRIPT_PATH"
-    --execution-timeout "$EXECUTION_TIMEOUT"
     --base-host-path "$BASE_HOST_PATH"
     --duration "$DURATION"
-    --boot-timeout "$BOOT_TIMEOUT"
     --output "$GUEST_OUTPUT"
-    --reg-path "$REG_PATH"
-    --procmon-path "$PROCMON_PATH"
-    --tshark-path "$TSHARK_PATH"
     --iface "$IFACE"
 )
+
+# Optional arguments added only if they are set
+if [[ -n "$BOOT_TIMEOUT" ]]; then
+    CMD_ARGS+=(--boot-timeout "$BOOT_TIMEOUT")
+fi
+
+if [[ -n "$EXECUTION_TIMEOUT" ]]; then
+    CMD_ARGS+=(--execution-timeout "$EXECUTION_TIMEOUT")
+fi
 
 if [[ -n "$MAX_URL" ]]; then
     CMD_ARGS+=(--max-url "$MAX_URL")
@@ -115,20 +122,30 @@ if [[ -n "$SOURCE_FETCH_MODE" ]]; then
     CMD_ARGS+=(--fetch-mode "$SOURCE_FETCH_MODE")
 fi
 
-# Only add API key flag if it's not empty
 if [[ -n "$SOURCE_API_KEY" ]]; then
     CMD_ARGS+=(--api-key "$SOURCE_API_KEY")
 fi
 
-# Append headless flag if set
 if [ "$RUN_HEADLESS" = true ]; then
     CMD_ARGS+=(--headless)
 fi
 
-# Append TShark fields safely if they are defined
 if [[ -n "$TSHARK_FIELDS" ]]; then
     CMD_ARGS+=(--tshark-fields $TSHARK_FIELDS)
 fi
+
+if [[ -n "$TSHARK_PATH" ]]; then
+    CMD_ARGS+=(--tshark-path $TSHARK_PATH)
+fi
+
+if [[ -n "$REG_PATH" ]]; then
+    CMD_ARGS+=(--reg-path $REG_PATH)
+fi
+
+if [[ -n "$PROCMON_PATH" ]]; then
+    CMD_ARGS+=(--procmon-path $PROCMON_PATH)
+fi
+# Optional arguments added only if they are set
 
 # 5. Execute
 "${CMD_ARGS[@]}"
