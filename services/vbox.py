@@ -8,10 +8,7 @@ import json
 
 from data import ScriptArguments
 
-_logger = logging.getLogger(__name__)
-
-
-class VBoxController:
+class VirtualBoxService:
     """
     Manages VirtualBox VM lifecycles by creating independent linked clones,
     executing guest scripts with admin privileges, and cleaning up instances.
@@ -37,6 +34,7 @@ class VBoxController:
         self.user = user
         self.password = password
         self.vbox_path = vbox_path
+        self._logger = logging.getLogger(__name__)
 
     def _call(
         self,
@@ -58,7 +56,7 @@ class VBoxController:
             RuntimeError: If the VBoxManage command returns a non-zero exit code.
         """
         cmd = [self.vbox_path] + args
-        _logger.debug(f"Executing: {' '.join(cmd)}")
+        self._logger.debug(f"Executing: {' '.join(cmd)}")
 
         try:
             # subprocess.run is synchronous; it WILL wait for VBoxManage.exe to exit.
@@ -82,7 +80,7 @@ class VBoxController:
             return result
 
         except FileNotFoundError:
-            _logger.critical(f"VBoxManage not found at: {self.vbox_path}")
+            self._logger.critical(f"VBoxManage not found at: {self.vbox_path}")
             raise RuntimeError("VirtualBox is not installed or path is incorrect.")
 
     def run_workflow(
@@ -115,18 +113,18 @@ class VBoxController:
         instance_vm_name = f"{self.base_vm_name}_{instance_id}"
         unique_host_path = os.path.abspath(os.path.join(base_host_path, instance_id))
 
-        _logger.info(f"[{instance_id}] Starting workflow...")
-        _logger.debug(f"[{instance_id}] Target Snapshot: {snapshot}")
+        self._logger.info(f"[{instance_id}] Starting workflow...")
+        self._logger.debug(f"[{instance_id}] Target Snapshot: {snapshot}")
 
         try:
             # 2. Directory Creation
-            _logger.info(
+            self._logger.info(
                 f"[{instance_id}] Creating host output directory: {unique_host_path}"
             )
             os.makedirs(unique_host_path, exist_ok=True)
 
             # 3. Cloning
-            _logger.info(f"[{instance_id}] Creating linked clone: {instance_vm_name}")
+            self._logger.info(f"[{instance_id}] Creating linked clone: {instance_vm_name}")
             self._call(
                 [
                     "clonevm",
@@ -142,7 +140,7 @@ class VBoxController:
             )
 
             # 4. Shared Folder Setup
-            _logger.info(
+            self._logger.info(
                 f"[{instance_id}] Attaching shared folder 'VM_Exchange' to {unique_host_path}"
             )
             self._call(
@@ -159,7 +157,7 @@ class VBoxController:
             )
 
             # 5. Power On
-            _logger.info(f"[{instance_id}] Powering on VM")
+            self._logger.info(f"[{instance_id}] Powering on VM")
             self._call(
                 [
                     "startvm",
@@ -170,22 +168,22 @@ class VBoxController:
             )
 
             # 6. Boot Monitoring
-            _logger.info(
+            self._logger.info(
                 f"[{instance_id}] Waiting for Guest Additions (Timeout: {boot_timeout}s)"
             )
             if not self._wait_for_boot(instance_vm_name, boot_timeout):
-                _logger.error(
+                self._logger.error(
                     f"[{instance_id}] CRITICAL: Boot timeout reached. Guest OS failed to respond."
                 )
                 return False, unique_host_path
-            _logger.info(f"[{instance_id}] Guest OS is ready.")
-            _logger.info(
+            self._logger.info(f"[{instance_id}] Guest OS is ready.")
+            self._logger.info(
                 f"[{instance_id}] Guest detected. Stabilizing for 10s before execution..."
             )
             time.sleep(10)
 
             # 7. Write a config file in guest
-            _logger.info(f"[{instance_id}] Building guest config...")
+            self._logger.info(f"[{instance_id}] Building guest config...")
 
             # Write a config file
             config_filename = "config.json"
@@ -197,7 +195,7 @@ class VBoxController:
                     f,
                     indent=2,
                 )
-            _logger.info(
+            self._logger.info(
                 f"[{instance_id}] Deploying {config_filename} to guest {guest_config_path}..."
             )
             self._call(
@@ -217,7 +215,7 @@ class VBoxController:
             time.sleep(2)
 
             # 8. POLLING: Check whether the guest script has signaled completion by creating a file in the shared folder
-            _logger.info(f"[{instance_id}] Waiting for completion signal...")
+            self._logger.info(f"[{instance_id}] Waiting for completion signal...")
 
             start_poll = time.time()
             success = False
@@ -225,7 +223,7 @@ class VBoxController:
 
             while (time.time() - start_poll) < execution_timeout:
                 if os.path.exists(host_signal_path):
-                    _logger.info(
+                    self._logger.info(
                         f"[{instance_id}] Signal detected. Execution completed."
                     )
                     success = True
@@ -236,7 +234,7 @@ class VBoxController:
                 time.sleep(2)  # Frequency of folder check
 
             if not success:
-                _logger.warning(
+                self._logger.warning(
                     f"[{instance_id}] Timed out after {execution_timeout}s."
                 )
             elif os.path.exists(host_signal_path):
@@ -246,34 +244,34 @@ class VBoxController:
                 except:
                     pass
 
-            _logger.info(f"[{instance_id}] Guest script finished successfully.")
+            self._logger.info(f"[{instance_id}] Guest script finished successfully.")
             return success, unique_host_path
         except Exception as e:
-            _logger.error(f"Error in instance {instance_id}: {e}")
+            self._logger.error(f"Error in instance {instance_id}: {e}")
             return False, unique_host_path
         finally:
             if clean_up:
                 self._cleanup_vm(instance_vm_name)
 
     def _cleanup_vm(self, vm_name: str):
-        _logger.info(f"[{vm_name}] Initiating cleanup and VM destruction.")
+        self._logger.info(f"[{vm_name}] Initiating cleanup and VM destruction.")
         try:
             # We use a broader check to ensure we try to delete even if poweroff fails
-            _logger.debug(f"[{vm_name}] Sending poweroff signal...")
+            self._logger.debug(f"[{vm_name}] Sending poweroff signal...")
             self._call(["controlvm", vm_name, "poweroff"])
 
             # Give VirtualBox a moment to release file locks
             time.sleep(3)
 
-            _logger.debug(f"[{vm_name}] Unregistering and deleting VM files...")
+            self._logger.debug(f"[{vm_name}] Unregistering and deleting VM files...")
             self._call(["unregistervm", vm_name, "--delete"])
-            _logger.info(f"[{vm_name}] Cleanup complete. Instance destroyed.")
+            self._logger.info(f"[{vm_name}] Cleanup complete. Instance destroyed.")
         except Exception as cleanup_err:
-            _logger.warning(f"[{vm_name}] Cleanup encountered an error: {cleanup_err}")
+            self._logger.warning(f"[{vm_name}] Cleanup encountered an error: {cleanup_err}")
 
     def _wait_for_boot(self, vm_name: str, timeout: int):
         start_time = time.time()
-        _logger.info(f"[{vm_name}] Waiting for full OS initialization (User Shell)...")
+        self._logger.info(f"[{vm_name}] Waiting for full OS initialization (User Shell)...")
 
         while time.time() - start_time < timeout:
             try:
@@ -291,7 +289,7 @@ class VBoxController:
                     # If it's not empty, someone is logged in and the desktop is ready
                     val = result.stdout.split("Value:")[1].strip()
                     if val:
-                        _logger.info(
+                        self._logger.info(
                             f"[{vm_name}] Shell detected. User(s) logged in: {val}"
                         )
                         # Add a 10s "settle" time for the desktop to finish loading icons/startup apps
@@ -301,7 +299,7 @@ class VBoxController:
                 pass
 
             time.sleep(5)
-            _logger.debug(
+            self._logger.debug(
                 f"[{vm_name}] OS still loading... ({int(time.time() - start_time)}s)"
             )
 

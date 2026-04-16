@@ -4,7 +4,7 @@ import textwrap
 from urls import DEFAULT_FETCH_MODE, DEFAULT_SOURCE
 from data import ScriptArguments
 from helpers import setup_logging
-from controllers.vbox import VBoxController
+from services.vbox import VirtualBoxService
 from urls.helper import TargetURLHelper
 
 
@@ -15,7 +15,7 @@ def parse_args():
         usage=textwrap.dedent(
             """\n
             python main.py --vm "Win10_Base" --user "Admin" --password "Pass123" \\
-                           --snapshot "Ready" --guest-script "C:\\audit.py" --duration 60
+                           --snapshot "Ready" --script-path "C:\\audit.py" --duration 60
             """
         ),
     )
@@ -119,7 +119,7 @@ def main():
     handler = TargetURLHelper.get_handler(source=args.source, api_key=args.api_key)
     target_urls: list[str] = handler.get_urls(mode=args.fetch_mode)
 
-    manager = VBoxController(
+    manager = VirtualBoxService(
         user=args.user,
         password=args.password,
         base_vm_name=args.vm,
