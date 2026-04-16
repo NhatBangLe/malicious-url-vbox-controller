@@ -1,4 +1,3 @@
-from pathlib import Path
 import subprocess
 import time
 import os
@@ -6,7 +5,7 @@ import uuid
 import logging
 import json
 
-from data import ScriptArguments
+from data import ScriptArguments, VBoxWorkflowConfiguration
 
 class VirtualBoxService:
     """
@@ -83,27 +82,13 @@ class VirtualBoxService:
             self._logger.critical(f"VBoxManage not found at: {self.vbox_path}")
             raise RuntimeError("VirtualBox is not installed or path is incorrect.")
 
-    def run_workflow(
-        self,
-        snapshot: str,
-        base_host_path: str,
-        script_args: ScriptArguments,
-        boot_timeout: int = 300,
-        execution_timeout: int = 60,
-        headless: bool = False,
-        clean_up: bool = True,
-    ) -> tuple[bool, str]:
+    def run_workflow(self, config: VBoxWorkflowConfiguration) -> tuple[bool, str]:
         """
         Orchestrates an independent VM run: clones from snapshot, mounts a unique
         shared folder, executes a Python script in a venv, and destroys the instance.
 
         Args:
-            snapshot (str): The name of the snapshot to clone.
-            base_host_path (str): The host directory where unique run folders will be created.
-            script_args (ScriptArguments): The script arguments to run.
-            boot_timeout (int): The maximum time (in seconds) to wait for the VM to boot.
-            execution_timeout (int): The maximum time (in seconds) to wait for the guest script to complete.
-            headless (bool): Whether to start the VM in headless mode. Defaults to False.
+            config (VBoxWorkflowConfiguration): The configuration for the workflow.
 
         Returns:
             tuple: (bool, str) - A success flag and the absolute path to the host output directory.
@@ -111,10 +96,10 @@ class VirtualBoxService:
         # 1. Initialization
         instance_id = f"Run_{uuid.uuid4().hex[:8]}"
         instance_vm_name = f"{self.base_vm_name}_{instance_id}"
-        unique_host_path = os.path.abspath(os.path.join(base_host_path, instance_id))
+        unique_host_path = os.path.abspath(os.path.join(config.base_host_path, instance_id))
 
         self._logger.info(f"[{instance_id}] Starting workflow...")
-        self._logger.debug(f"[{instance_id}] Target Snapshot: {snapshot}")
+        self._logger.debug(f"[{instance_id}] Target Snapshot: {config.snapshot}")
 
         try:
             # 2. Directory Creation
@@ -130,7 +115,7 @@ class VirtualBoxService:
                     "clonevm",
                     self.base_vm_name,
                     "--snapshot",
-                    snapshot,
+                    config.snapshot,
                     "--options",
                     "link",
                     "--name",
@@ -163,15 +148,15 @@ class VirtualBoxService:
                     "startvm",
                     instance_vm_name,
                     "--type",
-                    "headless" if headless else "gui",
+                    "headless" if config.headless else "gui",
                 ]
             )
 
             # 6. Boot Monitoring
             self._logger.info(
-                f"[{instance_id}] Waiting for Guest Additions (Timeout: {boot_timeout}s)"
+                f"[{instance_id}] Waiting for Guest Additions (Timeout: {config.boot_timeout}s)"
             )
-            if not self._wait_for_boot(instance_vm_name, boot_timeout):
+            if not self._wait_for_boot(instance_vm_name, config.boot_timeout):
                 self._logger.error(
                     f"[{instance_id}] CRITICAL: Boot timeout reached. Guest OS failed to respond."
                 )
@@ -188,10 +173,10 @@ class VirtualBoxService:
             # Write a config file
             config_filename = "config.json"
             host_config_path = os.path.join(unique_host_path, config_filename)
-            guest_config_path = os.path.join(script_args.script_path, config_filename)
+            guest_config_path = os.path.join(config.script_args.script_path, config_filename)
             with open(host_config_path, "w", encoding="utf-8") as f:
                 json.dump(
-                    script_args.__dict__,
+                    config.script_args.__dict__,
                     f,
                     indent=2,
                 )
@@ -219,9 +204,9 @@ class VirtualBoxService:
 
             start_poll = time.time()
             success = False
-            host_signal_path = os.path.join(unique_host_path, script_args.signal_file)
+            host_signal_path = os.path.join(unique_host_path, config.script_args.signal_file)
 
-            while (time.time() - start_poll) < execution_timeout:
+            while (time.time() - start_poll) < config.execution_timeout:
                 if os.path.exists(host_signal_path):
                     self._logger.info(
                         f"[{instance_id}] Signal detected. Execution completed."
@@ -235,7 +220,7 @@ class VirtualBoxService:
 
             if not success:
                 self._logger.warning(
-                    f"[{instance_id}] Timed out after {execution_timeout}s."
+                    f"[{instance_id}] Timed out after {config.execution_timeout}s."
                 )
             elif os.path.exists(host_signal_path):
                 # Cleanup signal on Host
@@ -250,7 +235,7 @@ class VirtualBoxService:
             self._logger.error(f"Error in instance {instance_id}: {e}")
             return False, unique_host_path
         finally:
-            if clean_up:
+            if config.clean_up:
                 self._cleanup_vm(instance_vm_name)
 
     def _cleanup_vm(self, vm_name: str):

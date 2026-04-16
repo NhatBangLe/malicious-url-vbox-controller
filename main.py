@@ -1,11 +1,9 @@
 import argparse
-import logging
 import textwrap
+from data import CLIArguments
+from services.default import DefaultScriptHandlingService
 from urls import DEFAULT_FETCH_MODE, DEFAULT_SOURCE
-from data import ScriptArguments
 from helpers import setup_logging
-from services.vbox import VirtualBoxService
-from urls.helper import TargetURLHelper
 
 
 def parse_args():
@@ -34,6 +32,12 @@ def parse_args():
         "--script-path",
         required=True,
         help="Path to the directory containing the script in the guest",
+    )
+    parser.add_argument(
+        "--clean-up",
+        action="store_true",
+        default=True,
+        help="Clean up VM and snapshots after execution (default: True)",
     )
     parser.add_argument(
         "--execution-timeout",
@@ -65,7 +69,7 @@ def parse_args():
     )
 
     # --- Audit Arguments (Passed to Guest) ---
-    parser.add_argument("--max-url", help="Maximum number of URLs to audit.")
+    parser.add_argument("--max-url", default=None, help="Maximum number of URLs to audit.")
     parser.add_argument(
         "--duration", type=int, default=30, help="Audit duration in seconds"
     )
@@ -103,59 +107,43 @@ def parse_args():
         help="Optional list of TShark fields to export (e.g., --tshark-fields frame.time ip.src ip.dst)",
     )
 
-    return parser.parse_args()
+    raw_args = parser.parse_args()
+    args = CLIArguments(
+        vbox_path=raw_args.vbox_path,
+        vm=raw_args.vm,
+        user=raw_args.user,
+        password=raw_args.password,
+        snapshot=raw_args.snapshot,
+        script_path=raw_args.script_path,
+
+        clean_up=raw_args.clean_up,
+        execution_timeout=raw_args.execution_timeout,
+        base_host_path=raw_args.base_host_path,
+        source=raw_args.source,
+        api_key=raw_args.api_key,
+        fetch_mode=raw_args.fetch_mode,
+
+        max_url=raw_args.max_url,
+        duration=raw_args.duration,
+        output=raw_args.output,
+        boot_timeout=raw_args.boot_timeout,
+        headless=raw_args.headless,
+
+        reg_path=raw_args.reg_path,
+        procmon_path=raw_args.procmon_path,
+        tshark_path=raw_args.tshark_path,
+        tshark_fields=raw_args.tshark_fields,
+        iface=raw_args.iface,
+    )
+
+    return args
 
 
 def main():
     args = parse_args()
-    workflow_params = {
-        "snapshot": args.snapshot,
-        "base_host_path": args.base_host_path,
-        "boot_timeout": args.boot_timeout,
-        "execution_timeout": int(args.execution_timeout),
-        "headless": bool(args.headless),
-    }
 
-    handler = TargetURLHelper.get_handler(source=args.source, api_key=args.api_key)
-    target_urls: list[str] = handler.get_urls(mode=args.fetch_mode)
-
-    manager = VirtualBoxService(
-        user=args.user,
-        password=args.password,
-        base_vm_name=args.vm,
-        vbox_path=args.vbox_path,
-    )
-
-    total_urls = len(target_urls)
-    if total_urls == 0:
-        logging.info(f"No URL to audit.")
-        return
-    logging.info(f"Found {total_urls} URL(s) to audit.")
-
-    total_run = int(args.max_url) if args.max_url else total_urls
-    logging.info(f"Launching {total_run} audits...")
-    args_list = [
-        ScriptArguments(
-            script_path=str(args.script_path),
-            target_url=target_url,
-            duration=int(args.duration),
-            output_path=str(args.output),
-            interface_num=int(args.iface),
-            tshark_fields=args.tshark_fields,
-            tshark_path=args.tshark_path,
-            procmon_path=args.procmon_path,
-            regview_path=args.reg_path,
-        )
-        for target_url in target_urls[:total_run]
-    ]
-    for workflow_args in args_list:
-        success, path = manager.run_workflow(
-            **workflow_params, script_args=workflow_args
-        )
-        logging.info(f"Audit at {path} completed: {'SUCCESS' if success else 'FAILED'}")
-
-    logging.info(f"Launched {total_run} audit(s) for {total_urls} URL(s).")
-
+    handler = DefaultScriptHandlingService()
+    handler.execute_script(args)
 
 if __name__ == "__main__":
     setup_logging()
