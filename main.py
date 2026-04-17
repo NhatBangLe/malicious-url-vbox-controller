@@ -1,7 +1,10 @@
 import argparse
+from datetime import datetime
 import textwrap
 from data import CLIArguments
 from services.default import DefaultScriptHandlingService
+from services.metasploit import MetasploitScriptHandlingService
+from constants import DEFAULT_MS_HOST, DEFAULT_MS_LPORT, DEFAULT_MS_PAYLOAD, DEFAULT_MS_SRVPORT
 from urls import DEFAULT_FETCH_MODE, DEFAULT_SOURCE
 from helpers import setup_logging
 
@@ -107,6 +110,72 @@ def parse_args():
         help="Optional list of TShark fields to export (e.g., --tshark-fields frame.time ip.src ip.dst)",
     )
 
+    # Metasploit Arguments
+    parser.add_argument(
+        "--ms-rpc-host",
+        type=str,
+        default="127.0.0.1",
+        help="Host for Metasploit RPC (default: 127.0.0.1)"
+    )
+    parser.add_argument(
+        "--ms-rpc-port",
+        type=int,
+        default=55553,
+        help="Port for Metasploit RPC (default: 55553)"
+    )
+    parser.add_argument(
+        "--ms-rpc-ssl",
+        action="store_true",
+        default=True,
+        help="Enables SSL for Metasploit RPC  (default: True)"
+    )
+    parser.add_argument(
+        "--ms-rpc-uri",
+        default=None,
+        help="URI for Metasploit RPC (default: /api/)"
+    )
+    parser.add_argument(
+        "--ms-rpc-password",
+        default=None,
+        help="Password for Metasploit RPC (Required if using Metasploit RPC)"
+    )
+    parser.add_argument(
+        "--ms-host",
+        type=str,
+        default=DEFAULT_MS_HOST,
+        help=f"Host for malicious Web servers (default: {DEFAULT_MS_HOST})"
+    )
+    parser.add_argument(
+        "--ms-srvport",
+        type=int,
+        default=DEFAULT_MS_SRVPORT,
+        help=f"Server port for malicious Web servers (default: {DEFAULT_MS_SRVPORT})"
+    )
+    parser.add_argument(
+        "--ms-lport",
+        type=int,
+        default=DEFAULT_MS_LPORT,
+        help=f"Listening port for Metasploit payloads (default: {DEFAULT_MS_LPORT})"
+    )
+    parser.add_argument(
+        "--ms-payload",
+        type=str,
+        default=DEFAULT_MS_PAYLOAD,
+        help=f"Payload for Metasploit exploits (default: {DEFAULT_MS_PAYLOAD})"
+    )
+    parser.add_argument(
+        "--ms-from-date",
+        type=lambda s: datetime.strptime(s, "%Y-%m-%d") if s is not None else None, 
+        default=None,
+        help="Start date for Metasploit vulnerabilities (YYYY-MM-DD)"
+    )
+    parser.add_argument(
+        "--ms-to-date",
+        type=lambda s: datetime.strptime(s, "%Y-%m-%d")  if s is not None else None,
+        default=None, 
+        help="End date for Metasploit vulnerabilities (YYYY-MM-DD)"
+    )
+    
     raw_args = parser.parse_args()
     args = CLIArguments(
         vbox_path=raw_args.vbox_path,
@@ -134,6 +203,18 @@ def parse_args():
         tshark_path=raw_args.tshark_path,
         tshark_fields=raw_args.tshark_fields,
         iface=raw_args.iface,
+
+        ms_rpc_host=raw_args.ms_rpc_host,
+        ms_rpc_port=raw_args.ms_rpc_port,
+        ms_rpc_ssl=raw_args.ms_rpc_ssl,
+        ms_rpc_uri=raw_args.ms_rpc_uri,
+        ms_rpc_password=raw_args.ms_rpc_password,
+        ms_host=raw_args.ms_host,
+        ms_srvport=raw_args.ms_srvport,
+        ms_lport=raw_args.ms_lport,
+        ms_payload=raw_args.ms_payload,
+        ms_from_date=raw_args.ms_from_date,
+        ms_to_date=raw_args.ms_to_date,
     )
 
     return args
@@ -142,7 +223,7 @@ def parse_args():
 def main():
     args = parse_args()
 
-    handler = DefaultScriptHandlingService()
+    handler = MetasploitScriptHandlingService()
     handler.execute_script(args)
 
 if __name__ == "__main__":

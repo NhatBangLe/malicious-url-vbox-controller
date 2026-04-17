@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+import datetime
 
+from constants import DEFAULT_MS_HOST, DEFAULT_MS_LPORT, DEFAULT_MS_PAYLOAD, DEFAULT_MS_SRVPORT
 from urls import DEFAULT_FETCH_MODE, DEFAULT_SOURCE
 
 @dataclass
@@ -29,6 +31,18 @@ class CLIArguments:
     tshark_path: str | None = None
     tshark_fields: list[str] | None = None
     iface: int = 1
+
+    ms_rpc_host: str = DEFAULT_MS_HOST
+    ms_rpc_port: int = 55553
+    ms_rpc_ssl: bool = True
+    ms_rpc_uri: str | None = None
+    ms_rpc_password: str | None = None
+    ms_host: str = DEFAULT_MS_HOST
+    ms_srvport: int = DEFAULT_MS_SRVPORT
+    ms_lport: int = DEFAULT_MS_LPORT
+    ms_payload: str = DEFAULT_MS_PAYLOAD
+    ms_from_date: datetime.datetime | None = None
+    ms_to_date: datetime.datetime | None = None
 
 @dataclass
 class ScriptArguments:
