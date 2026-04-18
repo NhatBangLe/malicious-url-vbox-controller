@@ -4,8 +4,7 @@ import textwrap
 from data import CLIArguments
 from services.default import DefaultScriptHandlingService
 from services.metasploit import MetasploitScriptHandlingService
-from constants import DEFAULT_MS_HOST, DEFAULT_MS_LPORT, DEFAULT_MS_PAYLOAD, DEFAULT_MS_SRVPORT
-from urls import DEFAULT_FETCH_MODE, DEFAULT_SOURCE
+from constants import DEFAULT_MS_HOST, DEFAULT_MS_LPORT, DEFAULT_MS_PAYLOAD, DEFAULT_MS_SRVPORT, DEFAULT_SOURCE, DEFAULT_FETCH_MODE
 from helpers import setup_logging
 
 

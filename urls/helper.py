@@ -1,4 +1,5 @@
-from urls import DEFAULT_FETCH_MODE, DEFAULT_SOURCE, ITargetURLHandler, TargetURLFetchMode, TargetURLSource
+from constants import DEFAULT_FETCH_MODE, DEFAULT_SOURCE
+from urls import ITargetURLHandler, TargetURLFetchMode, TargetURLSource
 from urls.abuse_url_haus import AbuseURLhausHandler, AbuseURLhausHandlerOptions
 
 

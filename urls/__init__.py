@@ -5,10 +5,6 @@ from typing import Literal
 TargetURLSource = Literal["ABUSE_HAUS", "FILE"]
 TargetURLFetchMode = Literal["PAST_30DAYS", "ONLY_ACTIVE"]
 
-DEFAULT_SOURCE: TargetURLSource  = "ABUSE_HAUS"
-DEFAULT_FETCH_MODE: TargetURLFetchMode = "PAST_30DAYS"
-
-
 class ITargetURLHandler(ABC):
     
     @abstractmethod

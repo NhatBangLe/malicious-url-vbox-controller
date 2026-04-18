@@ -5,3 +5,6 @@ DEFAULT_MS_SRVPORT = 8080 # Port for a VM to connect to
 DEFAULT_MS_LPORT = 4444
 DEFAULT_MS_URIPATH = '/test' # The specific URL suffix
 DEFAULT_MS_PAYLOAD = 'windows/meterpreter/reverse_tcp'
+
+DEFAULT_SOURCE = "ABUSE_HAUS"
+DEFAULT_FETCH_MODE = "PAST_30DAYS"

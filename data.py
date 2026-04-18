@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 import datetime
 
-from constants import DEFAULT_MS_HOST, DEFAULT_MS_LPORT, DEFAULT_MS_PAYLOAD, DEFAULT_MS_SRVPORT
-from urls import DEFAULT_FETCH_MODE, DEFAULT_SOURCE
+from constants import DEFAULT_MS_HOST, DEFAULT_MS_LPORT, DEFAULT_MS_PAYLOAD, DEFAULT_MS_SRVPORT, DEFAULT_SOURCE
+from constants import DEFAULT_FETCH_MODE
 
 @dataclass
 class CLIArguments:
