@@ -10,7 +10,7 @@ class MetasploitHelper:
         password = options.password if options.password is not None else ""
         uri = options.uri if options.uri is not None else "/api/"
         return MsfRpcClient(password=password, 
-                            host=options.host, 
+                            server=options.host, 
                             port=options.port, 
                             ssl=options.ssl,
                             uri=uri)

