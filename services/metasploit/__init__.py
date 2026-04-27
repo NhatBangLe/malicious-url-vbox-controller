@@ -56,7 +56,8 @@ class MetasploitScriptHandlingService(IScriptHandlingService):
             # Configure total runs
             results_to_run = final_results
             if args.max_url:
-                results_to_run = final_results[:args.max_url]
+                max_url = int(args.max_url)
+                results_to_run = final_results[:max_url]
             self._logger.info(f"Launching {len(results_to_run)} audits...")
             
             # Run audits
