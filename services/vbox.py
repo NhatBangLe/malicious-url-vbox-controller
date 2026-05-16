@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import subprocess
 import time
 import os
@@ -5,7 +6,15 @@ import uuid
 import logging
 import json
 
-from data import ScriptArguments, VBoxWorkflowConfiguration
+from data import VBoxWorkflowConfiguration
+
+
+@dataclass
+class AuditResult:
+    success: bool
+    results_dir: str
+    vm_id: str
+
 
 class VirtualBoxService:
     """
@@ -82,7 +91,7 @@ class VirtualBoxService:
             self._logger.critical(f"VBoxManage not found at: {self.vbox_path}")
             raise RuntimeError("VirtualBox is not installed or path is incorrect.")
 
-    def run_workflow(self, config: VBoxWorkflowConfiguration) -> tuple[bool, str]:
+    def run_workflow(self, config: VBoxWorkflowConfiguration) -> AuditResult:
         """
         Orchestrates an independent VM run: clones from snapshot, mounts a unique
         shared folder, executes a Python script in a venv, and destroys the instance.
@@ -96,7 +105,9 @@ class VirtualBoxService:
         # 1. Initialization
         instance_id = f"Run_{uuid.uuid4().hex[:8]}"
         instance_vm_name = f"{self.base_vm_name}_{instance_id}"
-        unique_host_path = os.path.abspath(os.path.join(config.base_host_path, instance_id))
+        unique_host_path = os.path.abspath(
+            os.path.join(config.base_host_path, instance_id)
+        )
 
         self._logger.info(f"[{instance_id}] Starting workflow...")
         self._logger.debug(f"[{instance_id}] Target Snapshot: {config.snapshot}")
@@ -109,7 +120,9 @@ class VirtualBoxService:
             os.makedirs(unique_host_path, exist_ok=True)
 
             # 3. Cloning
-            self._logger.info(f"[{instance_id}] Creating linked clone: {instance_vm_name}")
+            self._logger.info(
+                f"[{instance_id}] Creating linked clone: {instance_vm_name}"
+            )
             self._call(
                 [
                     "clonevm",
@@ -160,7 +173,7 @@ class VirtualBoxService:
                 self._logger.error(
                     f"[{instance_id}] CRITICAL: Boot timeout reached. Guest OS failed to respond."
                 )
-                return False, unique_host_path
+                return AuditResult(False, unique_host_path, instance_vm_name)
             self._logger.info(f"[{instance_id}] Guest OS is ready.")
             self._logger.info(
                 f"[{instance_id}] Guest detected. Stabilizing for 10s before execution..."
@@ -173,7 +186,9 @@ class VirtualBoxService:
             # Write a config file
             config_filename = "config.json"
             host_config_path = os.path.join(unique_host_path, config_filename)
-            guest_config_path = os.path.join(config.script_args.script_path, config_filename)
+            guest_config_path = os.path.join(
+                config.script_args.script_path, config_filename
+            )
             with open(host_config_path, "w", encoding="utf-8") as f:
                 json.dump(
                     config.script_args.__dict__,
@@ -204,7 +219,9 @@ class VirtualBoxService:
 
             start_poll = time.time()
             success = False
-            host_signal_path = os.path.join(unique_host_path, config.script_args.signal_file)
+            host_signal_path = os.path.join(
+                unique_host_path, config.script_args.signal_file
+            )
 
             while (time.time() - start_poll) < config.execution_timeout:
                 if os.path.exists(host_signal_path):
@@ -230,10 +247,10 @@ class VirtualBoxService:
                     pass
 
             self._logger.info(f"[{instance_id}] Guest script finished successfully.")
-            return success, unique_host_path
+            return AuditResult(success, unique_host_path, instance_vm_name)
         except Exception as e:
             self._logger.error(f"Error in instance {instance_id}: {e}")
-            return False, unique_host_path
+            return AuditResult(False, unique_host_path, instance_vm_name)
         finally:
             if config.clean_up:
                 self._cleanup_vm(instance_vm_name)
@@ -252,11 +269,15 @@ class VirtualBoxService:
             self._call(["unregistervm", vm_name, "--delete"])
             self._logger.info(f"[{vm_name}] Cleanup complete. Instance destroyed.")
         except Exception as cleanup_err:
-            self._logger.warning(f"[{vm_name}] Cleanup encountered an error: {cleanup_err}")
+            self._logger.warning(
+                f"[{vm_name}] Cleanup encountered an error: {cleanup_err}"
+            )
 
     def _wait_for_boot(self, vm_name: str, timeout: int):
         start_time = time.time()
-        self._logger.info(f"[{vm_name}] Waiting for full OS initialization (User Shell)...")
+        self._logger.info(
+            f"[{vm_name}] Waiting for full OS initialization (User Shell)..."
+        )
 
         while time.time() - start_time < timeout:
             try:
