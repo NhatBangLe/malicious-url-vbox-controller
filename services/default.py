@@ -2,6 +2,8 @@ import logging
 
 from data import ScriptArguments, VBoxWorkflowConfiguration
 from services import IScriptHandlingService
+from services.datatrace import DataTraceService
+from services.datatrace.helpers import upload_trace_files
 from services.vbox import VirtualBoxService
 from urls.helper import TargetURLHelper
 
@@ -11,7 +13,7 @@ class DefaultScriptHandlingService(IScriptHandlingService):
     def __init__(self) -> None:
         self._logger = logging.getLogger(__name__)
 
-    def execute_script(self, args, **kwargs) -> bool:
+    def execute_script(self, args) -> bool:
         handler = TargetURLHelper.get_handler(source=args.source, api_key=args.api_key)
         target_urls: list[str] = handler.get_urls(mode=args.fetch_mode)
 
@@ -38,6 +40,9 @@ class DefaultScriptHandlingService(IScriptHandlingService):
             for target_url in target_urls[:total_run]
         ]
 
+        datatrace_service: DataTraceService | None = None
+        if args.datatrace_endpoint:
+            datatrace_service = DataTraceService(args.datatrace_endpoint)
         manager = VirtualBoxService(
             user=args.user,
             password=args.password,
@@ -58,6 +63,15 @@ class DefaultScriptHandlingService(IScriptHandlingService):
             self._logger.info(
                 f"Audit at {result.results_dir} completed: {'SUCCESS' if result.success else 'FAILED'}"
             )
+
+            if datatrace_service:
+                upload_trace_files(
+                    service=datatrace_service,
+                    args=workflow_args,
+                    results_dir_path=result.results_dir,
+                    vm_id=result.vm_id,
+                    description=f"URL source: {args.source}",
+                )
 
         self._logger.info(f"Launched {total_run} audit(s) for {total_urls} URL(s).")
         return True

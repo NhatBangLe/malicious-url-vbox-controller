@@ -69,6 +69,12 @@ def parse_args():
         default=DEFAULT_FETCH_MODE,
         help=f'Mode for fetching malicious URLs (default: "{DEFAULT_FETCH_MODE}"), case insensitive. Supported: PAST_30DAYS, ONLY_ACTIVE',
     )
+    parser.add_argument(
+        "--datatrace-endpoint",
+        type=str,
+        default=None,
+        help="(Optional) Base URL for DataTrace API.",
+    )
 
     # --- Audit Arguments (Passed to Guest) ---
     parser.add_argument("--max-url", default=None, help="Maximum number of URLs to audit.")
@@ -190,6 +196,7 @@ def parse_args():
         source=raw_args.source,
         api_key=raw_args.api_key,
         fetch_mode=raw_args.fetch_mode,
+        datatrace_endpoint=raw_args.datatrace_endpoint,
 
         max_url=raw_args.max_url,
         duration=raw_args.duration,

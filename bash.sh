@@ -12,6 +12,7 @@ RUN_HEADLESS=false
 SOURCE_API_KEY=<your-api-key>
 SOURCE=abuse
 SOURCE_FETCH_MODE=past_30days
+# DATATRACE_ENDPOINT=http://localhost:8080
 
 # --- Default Audit & Performance Settings ---
 MAX_URL=1
@@ -47,7 +48,7 @@ usage() {
     echo "  --vbox-path [path]                Path to VBoxManage executable"
     echo "  --snapshot [name]                 Snapshot to clone"
     echo "  --host-path [path]                Host directory for logs"
-    echo "  --iface [number]                  Network interface number for tshark (default: 4)"
+    echo "  --datatrace-endpoint [url]        Base URL for data tracing"
     echo "  --fields \"f1 f2\"                TShark fields to export"
     echo ""
     exit 1
@@ -124,6 +125,10 @@ fi
 
 if [[ -n "$SOURCE_API_KEY" ]]; then
     CMD_ARGS+=(--api-key "$SOURCE_API_KEY")
+fi
+
+if [[ -n "$DATATRACE_ENDPOINT" ]]; then
+    CMD_ARGS+=(--datatrace-endpoint "$DATATRACE_ENDPOINT")
 fi
 
 if [ "$RUN_HEADLESS" = true ]; then

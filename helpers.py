@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 
 
-def setup_logging(logging_dir="./logs"):
+def setup_logging(logging_dir="logs"):
     os.makedirs(logging_dir, exist_ok=True)
 
     # Create a unique filename based on the current start time
@@ -32,7 +32,9 @@ def setup_logging(logging_dir="./logs"):
     console_handler = logging.StreamHandler(
         io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
     )
-    console_handler.setLevel(logging.INFO)
+
+    console_log_level = os.getenv("LOG_LEVEL", "INFO")
+    console_handler.setLevel(console_log_level)
     console_formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s]: %(message)s", datefmt="%H:%M:%S"
     )

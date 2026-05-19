@@ -1,8 +1,15 @@
 from dataclasses import dataclass
 import datetime
 
-from constants import DEFAULT_MS_HOST, DEFAULT_MS_LPORT, DEFAULT_MS_PAYLOAD, DEFAULT_MS_SRVPORT, DEFAULT_SOURCE
+from constants import (
+    DEFAULT_MS_HOST,
+    DEFAULT_MS_LPORT,
+    DEFAULT_MS_PAYLOAD,
+    DEFAULT_MS_SRVPORT,
+    DEFAULT_SOURCE,
+)
 from constants import DEFAULT_FETCH_MODE
+
 
 @dataclass
 class CLIArguments:
@@ -24,7 +31,8 @@ class CLIArguments:
     duration: int = 30
     output: str = "Z:\\"
     boot_timeout: int = 300
-    headless: bool = False
+    headless: bool = True
+    datatrace_endpoint: str | None = None
 
     reg_path: str | None = None
     procmon_path: str | None = None
@@ -44,6 +52,7 @@ class CLIArguments:
     ms_from_date: datetime.datetime | None = None
     ms_to_date: datetime.datetime | None = None
 
+
 @dataclass
 class ScriptArguments:
     script_path: str
@@ -57,19 +66,21 @@ class ScriptArguments:
     tshark_fields: list[str] | None = None
     interface_num: int = 1
 
+
 @dataclass
 class VBoxWorkflowConfiguration:
     """
-Configuration for a single VirtualBox VM workflow.
-    
-Args:
-    snapshot (str): The name of the snapshot to clone.
-    base_host_path (str): The host directory where unique run folders will be created.
-    script_args (ScriptArguments): The script arguments to run.
-    boot_timeout (int): The maximum time (in seconds) to wait for the VM to boot.
-    execution_timeout (int): The maximum time (in seconds) to wait for the guest script to complete.
-    headless (bool): Whether to start the VM in headless mode. Defaults to False.
-"""
+    Configuration for a single VirtualBox VM workflow.
+
+    Args:
+        snapshot (str): The name of the snapshot to clone.
+        base_host_path (str): The host directory where unique run folders will be created.
+        script_args (ScriptArguments): The script arguments to run.
+        boot_timeout (int): The maximum time (in seconds) to wait for the VM to boot.
+        execution_timeout (int): The maximum time (in seconds) to wait for the guest script to complete.
+        headless (bool): Whether to start the VM in headless mode. Defaults to False.
+    """
+
     snapshot: str
     base_host_path: str
     script_args: ScriptArguments

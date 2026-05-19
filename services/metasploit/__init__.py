@@ -14,6 +14,7 @@ from constants import (
 from data import ScriptArguments, VBoxWorkflowConfiguration
 from services import IScriptHandlingService
 from services.datatrace import DataTraceService
+from services.datatrace.helpers import upload_trace_files
 from services.metasploit.datatype import (
     MaliciousWebServerMetadata,
     MetasploitClientOptions,
@@ -30,6 +31,10 @@ class MetasploitScriptHandlingService(IScriptHandlingService):
         self._client: MsfRpcClient | None = None
 
     def execute_script(self, args) -> bool:
+        datatrace_service: DataTraceService | None = None
+        if args.datatrace_endpoint:
+            datatrace_service = DataTraceService(args.datatrace_endpoint)
+
         try:
             client_options = MetasploitClientOptions(
                 host=args.ms_rpc_host,
@@ -71,26 +76,25 @@ class MetasploitScriptHandlingService(IScriptHandlingService):
                     )
                 else:
                     final_results.append(search_result)
-            self._logger.info(f"Found {len(final_results)} potential exploits.")
 
-            # Configure total runs
-            results_to_run = final_results
-            if args.max_url:
-                max_url = int(args.max_url)
-                results_to_run = final_results[:max_url]
-            self._logger.info(f"Launching {len(results_to_run)} audits...")
+                # Stop early
+                if args.max_url and len(final_results) == args.max_url:
+                    break
+            self._logger.info(
+                f"Launching {len(final_results)} audits (max_url: {args.max_url})..."
+            )
 
             # Run audits
-            for result in results_to_run:
+            for exploit_module in final_results:
                 server_metadata = self._deploy_malicious_webserver(
-                    module_fullname=result.fullname,
+                    module_fullname=exploit_module.fullname,
                     host=args.ms_host,
                     lport=args.ms_lport,
                     srvport=args.ms_srvport,
                     payload=args.ms_payload,
                 )
                 self._logger.info(
-                    f"{result.fullname} ({result.disclosuredate}) (Job ID: {server_metadata.job_id}). Server started! Target URL: {server_metadata.url}"
+                    f"{exploit_module.fullname} ({exploit_module.disclosuredate}) (Job ID: {server_metadata.job_id}). Server started! Target URL: {server_metadata.url}"
                 )
                 self._logger.debug(self._client.jobs.info(server_metadata.job_id))
 
@@ -123,6 +127,16 @@ class MetasploitScriptHandlingService(IScriptHandlingService):
 
                 # Stop the web server after the audit completed
                 self._client.jobs.stop(server_metadata.job_id)
+
+                if datatrace_service:
+                    upload_trace_files(
+                        service=datatrace_service,
+                        args=script_args,
+                        results_dir_path=result.results_dir,
+                        vm_id=result.vm_id,
+                        vul_error=exploit_module.fullname,
+                        description=f"{exploit_module.fullname} ({exploit_module.disclosuredate}) | {server_metadata.url}",
+                    )
 
             return True
         except Exception as e:
