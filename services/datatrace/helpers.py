@@ -18,7 +18,7 @@ def upload_trace_files(
     description: str | None = None,
     risk_score: float | None = None,
 ):
-    logging.info("Uploading trace files (vm_id: {vm_id})...")
+    logging.info(f"Uploading trace files (vm_id: {vm_id})...")
 
     trace = CreateTraceRequest(
         target_url=args.target_url,
@@ -55,3 +55,7 @@ def upload_trace_files(
     with ThreadPoolExecutor() as executor:
         # executor.map submits all files to the pool
         executor.map(read_and_upload, files)
+
+    logging.info(f"Trace files (total: {len(files)}) are uploaded successfully.")
+
+    return trace_id
